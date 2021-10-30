@@ -1,16 +1,23 @@
-package Home_Work_7;
+package Home_Work_8;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import entity.Weather;
 import forecast_classes.AccuWeatherForecast;
 import forecast_classes.Forecast;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+
 import java.io.IOException;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 public class AccuweatherModel implements WeatherModel {
-    private static final String PROTOCOL = "http";
+
+    private static final String PROTOCOL = "https";
     private static final String BASE_HOST = "dataservice.accuweather.com";
     private static final String FORECASTS = "forecasts";
     private static final String VERSION = "v1";
@@ -29,6 +36,8 @@ public class AccuweatherModel implements WeatherModel {
 
     private static final OkHttpClient okHttpClient = new OkHttpClient();
     private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final DataBaseRepository dataBaseRepository = new DataBaseRepository();
 
     @Override
     public void getWeather(String city, Period period) throws IOException {
@@ -70,31 +79,57 @@ public class AccuweatherModel implements WeatherModel {
                         .url(fiveDaysHttpUrl)
                         .build();
                 break;
+            case DB:
+                List<Weather> weathers = getWeatherFromDBList(city);
+                for (Weather weather : weathers) {
+                    System.out.println(weather);
+                }
+                break;
         }
 
-        Response response = okHttpClient.newCall(request).execute();
-        if (response.isSuccessful()) {
-            String responseAsString = response.body().string();
+        if (request != null) {
+            Response response = okHttpClient.newCall(request).execute();
+            List<Weather> weatherList = new ArrayList<>();
+            if (response.isSuccessful()) {
+                String responseAsString = Objects.requireNonNull(response.body()).string();
 
+                ObjectMapper mapper = new ObjectMapper();
+                AccuWeatherForecast accuWeatherForecast = mapper.readValue(responseAsString, AccuWeatherForecast.class);
 
-            ObjectMapper mapper = new ObjectMapper();
-            AccuWeatherForecast accuWeatherForecast = mapper.readValue(responseAsString, AccuWeatherForecast.class);
+                String string = "Погода в " + city + ": ";
+                string += accuWeatherForecast.getHeadLine().getText();
+                System.out.println(string);
 
-            String string = "Погода в " + city + ": ";
-            string += accuWeatherForecast.getHeadLine().getText();
-            System.out.println(string);
-
-            System.out.println("О погоде: ");
-            System.out.println("Дата\tМах t\tМин t\tОблачность");
-            for (Forecast forecast : accuWeatherForecast.getDailyForecasts()) {
-                System.out.println(forecast.getDate().substring(0, 10) + "\t"
-                        + forecast.getTemperature().getMaximum().getValue() + ""
-                        + forecast.getTemperature().getMaximum().getUnit() + "\t"
-                        + forecast.getTemperature().getMinimum().getValue() + ""
-                        + forecast.getTemperature().getMinimum().getUnit() + "\t"
-                        + forecast.getDay().getIconPhrase());
+                System.out.println("О погоде: ");
+                System.out.println("Дата\tМах t\tМин t\tОблачность");
+                for (Forecast forecast : accuWeatherForecast.getDailyForecasts()) {
+                    System.out.println(forecast.getDate().substring(0, 10) + "\t"
+                            + forecast.getTemperature().getMaximum().getValue() + ""
+                            + forecast.getTemperature().getMaximum().getUnit() + "\t"
+                            + forecast.getTemperature().getMinimum().getValue() + ""
+                            + forecast.getTemperature().getMinimum().getUnit() + "\t"
+                            + forecast.getDay().getIconPhrase());
+                }
+                saveWeatherToDB(weatherList);
             }
         }
+    }
+    @Override
+    public boolean saveWeatherToDB(Weather weather) throws SQLException {
+        return dataBaseRepository.saveWeatherToDB(weather);
+    }
+
+    @Override
+    public Weather getWeatherFromDB(String city) {
+        return dataBaseRepository.getWeatherFromDB(city);
+    }
+
+    public void saveWeatherToDB(List<Weather> weatherList) {
+        dataBaseRepository.saveWeatherToDB(weatherList);
+    }
+
+    public List<Weather> getWeatherFromDBList(String city) {
+        return dataBaseRepository.getWeatherFromDBList(city);
     }
 
     private String detectCityKey(String city) throws IOException {
@@ -116,9 +151,8 @@ public class AccuweatherModel implements WeatherModel {
                 .build();
 
         Response locationResponse = okHttpClient.newCall(request).execute();
-        String locationResponseString = locationResponse.body().string();
+        String locationResponseString = Objects.requireNonNull(locationResponse.body()).string();
 
-        String cityKey = objectMapper.readTree(locationResponseString).get(0).at("/Key").asText();
-        return cityKey;
+        return objectMapper.readTree(locationResponseString).get(0).at("/Key").asText();
     }
-}
+} 
